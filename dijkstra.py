@@ -2,7 +2,7 @@ import heapq
 import cv2, random
 import matplotlib.pyplot as plt
 import numpy as np
-import phyre
+# import phyre
 
 
 # Helper functions and classes
@@ -74,11 +74,9 @@ def get_distance(img, u, v):
 
 def get_distance_obj(img, u, v, obj):
     if obj[u] and obj[v]:
-        #return 0.0 + (float(img[v][0]) - float(img[u][0])) ** 2 + (float(img[v][1]) - float(img[u][1])) ** 2 + (float(img[v][2]) - float(img[u][2])) ** 2
-        return 0.0
+        return 0.0 + (float(img[v][0]) - float(img[u][0])) ** 2 + (float(img[v][1]) - float(img[u][1])) ** 2 + (float(img[v][2]) - float(img[u][2])) ** 2
     else:
-        #return 0.1 + (float(img[v][0]) - float(img[u][0])) ** 2 + (float(img[v][1]) - float(img[u][1])) ** 2 + (float(img[v][2]) - float(img[u][2])) ** 2
-        return 1 if (img[v]==img[u]).all() or obj[u] else 1000
+        return 0.1 + (float(img[v][0]) - float(img[u][0])) ** 2 + (float(img[v][1]) - float(img[u][1])) ** 2 + (float(img[v][2]) - float(img[u][2])) ** 2
 
 
 def drawPath(img, path, thickness=2):
@@ -183,7 +181,7 @@ def find_distance_map(img, src):
     return distance_map
 
 
-def find_distance_map_obj(img, obj, trg_norm=False, len_norm=True):
+def find_distance_map_obj(img, obj):
     pq = []  # min-heap priority queue
     src = np.transpose(np.where(obj))
     source_y = src[0][0]
@@ -217,21 +215,17 @@ def find_distance_map_obj(img, obj, trg_norm=False, len_norm=True):
                 pq = bubble_down(pq, idx)
                 pq = bubble_up(pq, idx)
 
-    distance_map = np.ones((imagerows, imagecols)) * 255.0  # access by matrix[row][col]
+    distance_map = np.ones((imagerows, imagecols)) * 256.0  # access by matrix[row][col]
     for r in range(imagerows):
         for c in range(imagecols):
             distance_map[r][c] = float(matrix[r][c].d)
-
+    trg_norm = True
     if trg_norm:
         dd = distance_map.copy()
-        dd[dd > 255.] = 255.  # numpy.unique(np.array(dd, dtype=int))
+        dd[dd > 255.] = 0.  # numpy.unique(np.array(dd, dtype=int))
         dmax = np.max(dd)
         print('dmax =', dmax)
         distance_map = distance_map / dmax * 255.
-
-    if len_norm:
-        distance_map = 255*distance_map / (img.shape[0]*2)
-
     distance_map[distance_map > 255.] = 255.
     distance_map = 255. - distance_map
     return distance_map
@@ -249,18 +243,14 @@ if __name__ == "__main__":
     # img = cv2.imread('maze.png')  # read image
     init_scene = sim.initial_scenes[0]
     img = phyre.observations_to_float_rgb(init_scene)  # read image
-    img = cv2.resize(img, (64,64))
-    print(img)
-    cv2.imwrite('00002_017_scene.png', img*255)
-    target = np.flip((init_scene == 4), axis=0).astype(float)
-    target = cv2.resize(target, (64,64))
+    target = np.flip((init_scene == 4), axis=0)
     # cv2.imwrite('maze-initial.png', img)
     distance_map = find_distance_map_obj(img, target)
-    #distance_map[y-1, x] = 0.
-    #distance_map[y, x] = 0.
-    #distance_map[y+1, x] = 0.
-    #distance_map[y, x-1] = 0.
-    #distance_map[y, x+1] = 0.
+    distance_map[y-1, x] = 0.
+    distance_map[y, x] = 0.
+    distance_map[y+1, x] = 0.
+    distance_map[y, x-1] = 0.
+    distance_map[y, x+1] = 0.
     cv2.imwrite('00002_017_solution.png', distance_map)
     print('DONE')
 # %%
