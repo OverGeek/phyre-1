@@ -243,10 +243,11 @@ if __name__ == "__main__":
                 else:
                     print(model_path, eval_setup, fold_id, "|| loading data for generative training...")
                     solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle)
-                    solver.load_processed_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle)
+                    solver.load_processed_data_sfm1(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle)
                     print(model_path, eval_setup, fold_id, "|| training 'generative' models...")
                     # solver.train_supervised(epochs=epochs, train_mode=train_mode)
                     solver.train_proposal_net(epochs=epochs, setup=eval_setup)
+                    solver.save_sfm1_paths(dir='./SfM1_paths', setup=eval_setup, fold=fold_id, n_per_task=nper)
 
             if "-save" in sys.argv:
                 print(model_path, eval_setup, fold_id, "|| saving models...")
