@@ -295,7 +295,10 @@ if __name__ == "__main__":
                     solver.inspect_supervised(eval_setup, fold_id)
 
             if "-make_visuals" in sys.argv:
-                solver.make_visualisation(setup=eval_setup, fold=fold_id, n_per_task=nper)
+                solver.make_visualisation(setup=eval_setup, fold=fold_id, n_per_task=nper,
+                                          model="sfm1")
+                solver.make_visualisation(setup=eval_setup, fold=fold_id, n_per_task=nper,
+                                          model="sfm2")
 
             if "-solve" in sys.argv:
                 print(model_path, eval_setup, fold_id, "|| getting auccess...")

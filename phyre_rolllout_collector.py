@@ -1,4 +1,4 @@
-# import phyre
+import phyre
 import cv2
 import pickle
 import pathlib
@@ -68,6 +68,8 @@ def collect_solving_dataset_paths(path_str, tasks, n_per_task=10, collect_base=T
     # initial_scene = sim.initial_scenes[0]
     # plt.imshow(phyre.observations_to_float_rgb(initial_scene))
     # plt.show()
+
+    tasks = [task for task in tasks if not (task.startswith("00018") or task.startswith("00023"))]
 
     for task_idx, task in enumerate(tasks[:]):
         # COLLECT SOLVES

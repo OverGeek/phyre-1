@@ -1,1 +1,1 @@
-SfMLearner ball_cross_template 0
+SfMLearner ball_within_template 0

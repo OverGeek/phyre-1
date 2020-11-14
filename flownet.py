@@ -14,7 +14,7 @@ from itertools import chain
 import argparse
 import os
 import random
-# import phyre
+import phyre
 from dijkstra import find_distance_map_obj
 import torch
 import torch.nn as nn
@@ -1062,7 +1062,7 @@ class FlownetSolver():
                 scene_with_injected = T.as_tensor(np.max(T.stack((scene_with_estimate, drawn), dim=0).numpy(), axis=0))
                 init_with_injected = T.as_tensor(np.max(T.cat((init_scenes[idx], drawn[None]), dim=0).numpy(), axis=0))
                 pipeline = T.cat((print_batch[idx], scene_with_estimate[None], pure_scene[None], scene_with_injected[None], init_with_injected[None]), dim=0)
-                
+
                 text = ['green\nball GT', 'blue GT\ndynamic', 'blue GT\nstatic', 'grey', 'black', 'full\nscene', 'base\npred', 'target\npred', 'action\npred', 'a-ball\npred','action\nestimate', 'estimate\n/w action','   final\n   action']
                 x,y,r = round(a[0], 3), round(a[1], 3), round(a[2], 3)
                 vis_batch(pipeline[None], f'result/flownet/solving/generative', f"{task}__{str(a)}", text = text)
@@ -2030,10 +2030,7 @@ class FlownetSolver():
             if proposal_dict is not None:
                 setup_name = setup_name + "_proposals"
 
-            with open('./phyre_get_fold.pickle', 'rb') as f:
-                x = pickle.load(f)
-
-            train_ids, dev_ids, test_ids = x
+            train_ids, dev_ids, test_ids = phyre.get_fold(eval_setup, fold_id)
             test_ids = dev_ids + test_ids
 
         if not test:
@@ -2160,14 +2157,12 @@ class FlownetSolver():
                     predicted_path = net(T.tensor(input_initial_scene).float().to(self.device)[None])[0][0]
                     predicted_path = predicted_path.cpu().detach().numpy()[:, :, None]
 
-                    # visulisation
-                    if len(row) == 0:
-                        row.append(np.moveaxis(input_initial_scene, 0, -1))  # appending the initial scene
-
-                    empty_channel = np.zeros(predicted_path.shape)
-                    row.append(np.concatenate([predicted_path, empty_channel, empty_channel], axis=-1))
+                    # visualisation
+                    row.append(np.moveaxis(input_initial_scene, 0, -1))
                     row.append(np.concatenate([np.moveaxis(current_obj_path_channel, 0, -1),
-                                               empty_channel, empty_channel], axis=-1))
+                                               np.moveaxis(dynamic_obj_channel, 0, -1),
+                                               predicted_path,
+                                               np.moveaxis(static_obj_channel, 0, -1)], axis=-1))
 
                 rows.append(row)
                 if len(rows) == 100:
@@ -2265,8 +2260,8 @@ class FlownetSolver():
 
         if not test:
             load_path = save_path = f"data/{setup_name}_fold_{fold_id}_train_{width}xy_{n_per_task}n"
-            if os.path.exists(load_path + "/processed_data.pickle"):
-                with gzip.open(load_path + '/processed_data.pickle', 'rb') as fp:
+            if os.path.exists(load_path + "/processed_data_sfm1.pickle"):
+                with gzip.open(load_path + '/processed_data_sfm1.pickle', 'rb') as fp:
                     processed_data = pickle.load(fp)
                     X = T.tensor(processed_data).float()
 
@@ -2406,7 +2401,7 @@ class FlownetSolver():
 
                     obj_idxs = range(6)
                     static_obj_idxs = [3, 5]
-                    for i in tqdm(range(len(data[: 2000]))):
+                    for i in tqdm(range(len(data[:]))):
                         X = data[i]
                         X = np.true_divide(X, 255.)
                         init_scene = X[:6]
@@ -2499,16 +2494,16 @@ class FlownetSolver():
 
         save_path = f"data/{setup_name}_fold_{fold_id}_train_{width}xy_{n_per_task}n"
 
-        with open("./phyre_get_fold.pickle", "rb") as f:
-            x = pickle.load(f)
-
-        train_ids, dev_ids, test_ids = x
-        train_ids += dev_ids + test_ids
-        train_ids = sorted(train_ids)
-
-        # train_ids, dev_ids, test_ids = phyre.get_fold(eval_setup, fold_id)
+        # with open("./phyre_get_fold.pickle", "rb") as f:
+        #     x = pickle.load(f)
+        #
+        # train_ids, dev_ids, test_ids = x
         # train_ids += dev_ids + test_ids
         # train_ids = sorted(train_ids)
+
+        train_ids, dev_ids, test_ids = phyre.get_fold(eval_setup, fold_id)
+        train_ids += dev_ids + test_ids
+        train_ids = sorted(train_ids)
 
         data = make_mono_dataset_2(
             f"data/{setup_name}_fold_{fold_id}_train_{width}xy_{n_per_task}n",
@@ -2594,7 +2589,6 @@ class FlownetSolver():
 
                 init_scene = X[:, :3]
                 current_obj_path_channel = X[:, 3]
-                dynamic_obj_path_channel = X[:, 4]
 
                 # for 4-headed loss
                 current_obj_path_channel_128 = current_obj_path_channel
@@ -2627,7 +2621,7 @@ class FlownetSolver():
                     batch_images = [init_scene.permute(0, 2, 3, 1).cpu().detach().numpy(),
                                     current_obj_path.cpu().detach().numpy()]
 
-                    vis_pred_path(batch_images, f'./proposalNet_result/{setup}', str(epoch) + "_" + str(i))
+                    vis_pred_path(batch_images, f'./proposalNet_result/{setup}/SfM1', str(epoch) + "_" + str(i))
                     loss_log.append([str(epoch) + "_" + str(i), loss_all_scales[0].item()])
 
                 opti.zero_grad()

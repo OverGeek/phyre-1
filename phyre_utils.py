@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from phyre_rolllout_collector import load_phyre_rollouts, collect_solving_observations, collect_solving_dataset, \
     collect_solving_dataset_paths
 import cv2
-# import phyre
+import phyre
 import os
 import pickle
 import random
@@ -86,7 +86,7 @@ def make_mono_dataset(path, size=(32, 32), tasks=[], batch_size=32, solving=True
 def make_mono_dataset_2(path, size=(32, 32), tasks=[], batch_size=32, solving=True, n_per_task=1, shuffle=True,
                         proposal_dict=None, dijkstra=False, save=True):
 
-    if os.path.exists(path+'./data.pickle'):
+    if os.path.exists(path+'/data.pickle'):
         with gzip.open(path + '/data.pickle', 'rb') as fp:
             data = pickle.load(fp)
     else:
@@ -131,6 +131,7 @@ def invert_bg(X, black_channel=None):
                 if X[h, w, 2] == 1.:
                     white_bg[h, w, :] = 0.
 
+    white_bg = np.clip(white_bg, 0., 1.)
     return white_bg
 
 
@@ -411,7 +412,7 @@ def prepare_data(data, size):
 
 def extract_channels_and_paths(rollout, path_idxs=[1, 0], size=(32, 32), gamma=1):
     """
-    returns init scenes from 'channels' followed by paths specified by 'path_idxs' 
+    returns init scenes from 'channels' followed by paths specified by 'path_idxs'
     """
     paths = np.zeros((len(path_idxs), len(rollout), size[0], size[1]))
     alpha = 1
