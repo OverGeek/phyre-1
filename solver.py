@@ -1,7 +1,7 @@
 from phyre_utils import pic_to_action_vector, pic_hist_to_action, vis_batch, make_mono_dataset, grow_action_vector, \
     action_delta_generator
 import torch as T
-import phyre
+# import phyre
 import numpy as np
 import cv2
 import json
@@ -243,16 +243,27 @@ if __name__ == "__main__":
                 else:
                     print(model_path, eval_setup, fold_id, "|| loading data for generative training...")
                     solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle)
-                    solver.load_processed_data_sfm1(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle)
                     print(model_path, eval_setup, fold_id, "|| training 'generative' models...")
-                    # solver.train_supervised(epochs=epochs, train_mode=train_mode)
-                    solver.train_proposal_net(epochs=epochs, setup=eval_setup)
-                    solver.save_sfm1_paths(dir='./SfM1_paths', setup=eval_setup, fold=fold_id, n_per_task=nper)
+                    solver.train_supervised(epochs=epochs, train_mode=train_mode)
+
+            if "-train_sfm1" in sys.argv:
+                print(model_path, eval_setup, fold_id, "|| loading data for generative training...")
+                solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle)
+                solver.load_processed_data_sfm1(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle)
+                print(model_path, eval_setup, fold_id, "|| training 'generative' models...")
+                solver.train_sfm1(epochs=epochs, setup=eval_setup)
 
             if "-save" in sys.argv:
                 print(model_path, eval_setup, fold_id, "|| saving models...")
                 solver.save_models(setup=eval_setup, fold=fold_id)
                 print("Models saved")
+
+            if "-save_sfm1_paths" in sys.argv:
+                solver.save_sfm1_paths(dir='./SfM1_paths', setup=eval_setup, fold=fold_id, n_per_task=nper)
+
+            if "-train_sfm2" in sys.argv:
+                solver.load_processed_data_sfm2(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle)
+                solver.train_sfm2(epochs=epochs, setup=eval_setup)
 
             if "-inspect" in sys.argv:
                 if type == "brute":

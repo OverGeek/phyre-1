@@ -14,7 +14,7 @@ from itertools import chain
 import argparse
 import os
 import random
-import phyre
+# import phyre
 from dijkstra import find_distance_map_obj
 import torch
 import torch.nn as nn
@@ -2030,7 +2030,10 @@ class FlownetSolver():
             if proposal_dict is not None:
                 setup_name = setup_name + "_proposals"
 
-            train_ids, dev_ids, test_ids = phyre.get_fold(eval_setup, fold_id)
+            with open('./phyre_get_fold.pickle', 'rb') as f:
+                x = pickle.load(f)
+
+            train_ids, dev_ids, test_ids = x
             test_ids = dev_ids + test_ids
 
         if not test:
@@ -2158,8 +2161,8 @@ class FlownetSolver():
                 rows = []
 
     def load_processed_data_sfm1(self, setup='ball_within_template', fold=0, train_tasks=[], test_tasks=[],
-                            brute_search=False,
-                            n_per_task=1, shuffle=True, test=False, setup_name="all-tasks", proposal_dict=None):
+                                 brute_search=False,
+                                 n_per_task=1, shuffle=True, test=False, setup_name="all-tasks", proposal_dict=None):
         fold_id = fold
         eval_setup = setup
         width = self.width
@@ -2223,7 +2226,6 @@ class FlownetSolver():
                                 dynamic_obj_idxs = [idx for idx in obj_idxs if idx not in static_obj_idxs
                                                     and obj_in_scene(init_scene[idx]) and idx != obj_idx]
                                 dynamic_obj_channel = np.max(init_scene[dynamic_obj_idxs], axis=0)
-                                dynamic_obj_path_channel = np.max(paths[dynamic_obj_idxs], axis=0)
 
                                 # Static objects
                                 static_obj_idxs_in_scene = [idx for idx in static_obj_idxs
@@ -2237,23 +2239,145 @@ class FlownetSolver():
                                 dynamic_obj_channel = np.expand_dims(dynamic_obj_channel, axis=0)
                                 static_obj_channel = np.expand_dims(static_obj_channel, axis=0)
                                 current_obj_path_channel = np.expand_dims(current_obj_path_channel, axis=0)
-                                dynamic_obj_path_channel = np.expand_dims(dynamic_obj_path_channel, axis=0)
 
                                 # Processed data
                                 input_initial_scene = np.concatenate([current_obj_channel, dynamic_obj_channel,
                                                                       static_obj_channel], axis=0)
-                                processed_input = np.concatenate([input_initial_scene, current_obj_path_channel,
-                                                                  dynamic_obj_path_channel], axis=0)
+                                processed_input = np.concatenate([input_initial_scene,
+                                                                  current_obj_path_channel], axis=0)
 
-                                procesed_data.append(processed_input)
+                                procesed_data.append(processed_input.astype(np.uint8))
 
                             data[i] = None
 
-                    file = gzip.GzipFile(save_path + '/processed_data.pickle', 'wb')
+                    file = gzip.GzipFile(save_path + '/processed_data_sfm1.pickle', 'wb')
                     pickle.dump(procesed_data, file)
                     file.close()
 
                     procesed_data = T.tensor(procesed_data).float()
+
+                    with open(load_path + '/index.pickle', 'rb') as fp:
+                        index = pickle.load(fp)
+
+                    self.train_dataloader = T.utils.data.DataLoader(T.utils.data.TensorDataset(procesed_data),
+                                                                    batchsize, shuffle=False)
+                    self.train_index = index
+
+        else:
+            # To-do
+            pass
+        if brute_search:
+            if not test:
+                # To-do
+                pass
+            else:
+                # To-do
+                pass
+
+        with open(f'result/flownet/training/{self.path}/namespace.txt', 'w') as handle:
+            handle.write(f"{self.modeltype} {setup} {fold}")
+
+    def load_processed_data_sfm2(self, setup='ball_within_template', fold=0, train_tasks=[], test_tasks=[],
+                                 brute_search=False,
+                                 n_per_task=1, shuffle=True, test=False, setup_name="all-tasks", proposal_dict=None):
+        fold_id = fold
+        eval_setup = setup
+        width = self.width
+        batchsize = 32
+        dijkstra_str = "_dijkstra" if self.dijkstra else ""
+
+        if train_tasks and test_tasks:
+            train_ids = train_tasks
+            test_ids = test_tasks
+        else:
+            setup_name = "within" if setup == 'ball_within_template' else "cross"
+            setup_name = setup_name + dijkstra_str
+            if proposal_dict is not None:
+                setup_name = setup_name + "_proposals"
+
+        if not test:
+            load_path = save_path = f"data/{setup_name}_fold_{fold_id}_train_{width}xy_{n_per_task}n"
+            if os.path.exists(load_path + "/processed_data_sfm2.pickle"):
+                with gzip.open(load_path + '/processed_data_sfm2.pickle', 'rb') as fp:
+                    processed_data = pickle.load(fp)
+                    X = T.tensor(processed_data).float()
+
+                    with open(load_path + '/index.pickle', 'rb') as fp:
+                        index = pickle.load(fp)
+
+                    self.train_dataloader = T.utils.data.DataLoader(T.utils.data.TensorDataset(X), batchsize,
+                                                                    shuffle=False)
+                    self.train_index = index
+
+            else:
+                if os.path.exists(load_path + "/data.pickle") and os.path.exists(load_path + "/sfm1_paths.pickle"):
+                    with gzip.open(load_path + '/data.pickle', 'rb') as fp:
+                        data = pickle.load(fp)
+
+                    with gzip.open(load_path + '/sfm1_paths.pickle', 'rb') as fp:
+                        sfm1_paths = pickle.load(fp)
+
+                    processed_data = []
+
+                    obj_idxs = range(6)
+                    static_obj_idxs = [3, 5]
+                    for i in tqdm(range(len(data[: 2000]))):
+                        X = data[i]
+                        X = np.true_divide(X, 255.)
+                        init_scene = X[:6]
+                        paths = sfm1_paths[i]
+                        ground_truth_paths = X[6:]
+
+                        for obj_idx in obj_idxs:
+                            # skip for static objects
+                            if obj_idx in static_obj_idxs:
+                                continue
+
+                            # skip if object corresponding to obj_idx is not in scene
+                            if not obj_in_scene(init_scene[obj_idx]):
+                                continue
+
+                            # Current object
+                            current_obj_channel = init_scene[obj_idx]
+                            current_obj_path_channel = paths[obj_idx]
+
+                            # Dynamic objects
+                            dynamic_obj_idxs = [idx for idx in obj_idxs if idx not in static_obj_idxs
+                                                and obj_in_scene(init_scene[idx]) and idx != obj_idx]
+                            dynamic_obj_channel = np.max(init_scene[dynamic_obj_idxs], axis=0)
+                            dynamic_obj_path_channel = np.max(paths[dynamic_obj_idxs], axis=0)
+
+                            # Static objects
+                            static_obj_idxs_in_scene = [idx for idx in static_obj_idxs
+                                                        if obj_in_scene(init_scene[idx])]
+                            if len(static_obj_idxs_in_scene) > 0:
+                                static_obj_channel = np.max(init_scene[static_obj_idxs_in_scene], axis=0)
+                            else:
+                                static_obj_channel = np.zeros((init_scene.shape[1], init_scene.shape[2]))
+
+                            current_obj_channel = np.expand_dims(current_obj_channel, axis=0)
+                            dynamic_obj_channel = np.expand_dims(dynamic_obj_channel, axis=0)
+                            static_obj_channel = np.expand_dims(static_obj_channel, axis=0)
+                            current_obj_path_channel = np.expand_dims(current_obj_path_channel, axis=0)
+                            dynamic_obj_path_channel = np.expand_dims(dynamic_obj_path_channel, axis=0)
+
+                            # Processed data
+                            input_channels = np.concatenate([current_obj_channel, dynamic_obj_channel,
+                                                             static_obj_channel,
+                                                             current_obj_path_channel, dynamic_obj_path_channel],
+                                                            axis=0)
+                            processed_input = np.concatenate([input_channels,
+                                                              ground_truth_paths[obj_idx][None]], axis=0)
+
+                            processed_data.append(processed_input.astype(np.float32))
+
+                        data[i] = None
+
+                    file = gzip.GzipFile(save_path + '/processed_data_sfm2.pickle', 'wb')
+                    pickle.dump(processed_data, file)
+                    file.close()
+
+                    procesed_data = T.tensor(processed_data).float()
 
                     with open(load_path + '/index.pickle', 'rb') as fp:
                         index = pickle.load(fp)
@@ -2288,9 +2412,18 @@ class FlownetSolver():
 
         setup_name = "within" if setup == 'ball_within_template' else "cross"
 
-        train_ids, dev_ids, test_ids = phyre.get_fold(eval_setup, fold_id)
+        save_path = f"data/{setup_name}_fold_{fold_id}_train_{width}xy_{n_per_task}n"
+
+        with open("./phyre_get_fold.pickle", "rb") as f:
+            x = pickle.load(f)
+
+        train_ids, dev_ids, test_ids = x
         train_ids += dev_ids + test_ids
         train_ids = sorted(train_ids)
+
+        # train_ids, dev_ids, test_ids = phyre.get_fold(eval_setup, fold_id)
+        # train_ids += dev_ids + test_ids
+        # train_ids = sorted(train_ids)
 
         data = make_mono_dataset_2(
             f"data/{setup_name}_fold_{fold_id}_train_{width}xy_{n_per_task}n",
@@ -2313,7 +2446,7 @@ class FlownetSolver():
 
             init_scenes.append(init_scene)
 
-            empty_path = np.zeros((init_scene.shape[0], init_scene.shape[1]))
+            empty_path = np.zeros((1, init_scene.shape[1], init_scene.shape[2]))
 
             for obj_idx in obj_idxs:
                 # skip for static objects
@@ -2350,21 +2483,25 @@ class FlownetSolver():
                 input_initial_scene = np.concatenate([current_obj_channel, dynamic_obj_channel,
                                                       static_obj_channel], axis=0)
 
-                predicted_path = SfMNet1(T.tensor(input_initial_scene).float().to(self.device)[None])[0][0]
+                predicted_path = SfMNet1(T.tensor(input_initial_scene).float().to(self.device)[None])[0]
                 predicted_path = predicted_path.cpu().detach().numpy()
                 sfm1_path.append(predicted_path)
 
-    def train_proposal_net(self, setup, epochs=10):
+            sfm1_paths.append(np.concatenate(sfm1_path, axis=0).astype(np.float32))
+
+        file = gzip.GzipFile(save_path + '/sfm1_paths.pickle', 'wb')
+        pickle.dump(sfm1_paths, file)
+        file.close()
+        print("SfM1 paths saved")
+
+    def train_sfm1(self, setup, epochs=10):
         SfMNet1 = self.models["SfM1"]
-        SfMNet2 = self.models["SfM2"]
         self.to_train()
         loss_log = []
 
         data_loader = self.train_dataloader
 
-        opti = T.optim.Adam(chain(SfMNet1.parameters(recurse=True),
-                                  SfMNet2.parameters(recurse=True)),
-                            lr=3e-3)
+        opti = T.optim.Adam(SfMNet1.parameters(recurse=True), lr=3e-3)
 
         for epoch in range(epochs):
             for i, (X,) in enumerate(data_loader):
@@ -2414,6 +2551,63 @@ class FlownetSolver():
 
         log_loss_df = pd.DataFrame(loss_log, columns=['Epoch and iteration', 'loss'])
         log_loss_df.to_csv(f'./result/flownet/inspect/standard/default/{setup}/loss.csv', index=False)
+
+    def train_sfm2(self, setup, epochs=10):
+        SfMNet2 = self.models["SfM2"]
+        self.to_train()
+        loss_log = []
+
+        data_loader = self.train_dataloader
+
+        opti = T.optim.Adam(SfMNet2.parameters(recurse=True), lr=3e-3)
+
+        for epoch in range(epochs):
+            for i, (X,) in enumerate(data_loader):
+                X = X.to(self.device)
+
+                sfm2_input = X[:, :5]
+                current_obj_path_channel = X[:, 5]
+
+                # for 4-headed loss
+                current_obj_path_channel_128 = current_obj_path_channel
+                current_obj_path_channel_64 = self.resize_tensor(current_obj_path_channel, 64).squeeze(1)
+                current_obj_path_channel_32 = self.resize_tensor(current_obj_path_channel, 32).squeeze(1)
+                current_obj_path_channel_16 = self.resize_tensor(current_obj_path_channel, 16).squeeze(1)
+                current_obj_path_channel_all_scales = [current_obj_path_channel_128,
+                                                       current_obj_path_channel_64,
+                                                       current_obj_path_channel_32,
+                                                       current_obj_path_channel_16]
+
+                predicted_path_all_scales = SfMNet2(sfm2_input)
+
+                loss_all_scales = []
+                for predicted_path, gt_path in zip(predicted_path_all_scales,
+                                                   current_obj_path_channel_all_scales):
+                    loss_one_scale = F.binary_cross_entropy(predicted_path, gt_path.unsqueeze(1))
+                    loss_all_scales.append(loss_one_scale)
+
+                loss = sum(loss_all_scales) / len(loss_all_scales)
+                print(epoch, i, loss_all_scales[0].item())
+
+                # visualisation
+                if i % 100 == 0:
+                    empty_channel = T.zeros((32, 1, sfm2_input.size(2), sfm2_input.size(3))).to(self.device)
+
+                    current_obj_path = T.cat([predicted_path_all_scales[0], empty_channel,
+                                              empty_channel], axis=1).permute(0, 2, 3, 1)
+
+                    batch_images = [sfm2_input[:, :3].permute(0, 2, 3, 1).cpu().detach().numpy(),
+                                    current_obj_path.cpu().detach().numpy()]
+
+                    vis_pred_path(batch_images, f'./proposalNet_result/{setup}/SfM2/', str(epoch) + "_" + str(i))
+                    loss_log.append([str(epoch) + "_" + str(i), loss_all_scales[0].item()])
+
+                opti.zero_grad()
+                loss.backward()
+                opti.step()
+
+        log_loss_df = pd.DataFrame(loss_log, columns=['Epoch and iteration', 'loss'])
+        log_loss_df.to_csv(f'./result/flownet/inspect/standard/default/{setup}/loss_sfm2.csv', index=False)
 
     def train_supervised(self, train_mode='CONS', epochs=10):
         self.to_train()
