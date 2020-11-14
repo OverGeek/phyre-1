@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from phyre_rolllout_collector import load_phyre_rollouts, collect_solving_observations, collect_solving_dataset, \
     collect_solving_dataset_paths
 import cv2
-import phyre
+# import phyre
 import os
 import pickle
 import random
@@ -85,12 +85,13 @@ def make_mono_dataset(path, size=(32, 32), tasks=[], batch_size=32, solving=True
 
 def make_mono_dataset_2(path, size=(32, 32), tasks=[], batch_size=32, solving=True, n_per_task=1, shuffle=True,
                         proposal_dict=None, dijkstra=False, save=True):
-    if not os.path.exists(path + "/data.pickle") or not save:
-        if tasks:
-            data = collect_solving_dataset_paths(path, tasks, n_per_task=n_per_task, stride=5, size=size, solving=solving,
+
+    if os.path.exists(path+'./data.pickle'):
+        with gzip.open(path + '/data.pickle', 'rb') as fp:
+            data = pickle.load(fp)
+    else:
+        data = collect_solving_dataset_paths(path, tasks, n_per_task=n_per_task, stride=5, size=size, solving=solving,
                                           proposal_dict=proposal_dict, dijkstra=dijkstra, save=save)
-        else:
-            pass
 
     if not save:
         return data
@@ -112,11 +113,23 @@ def shrink_data(path):
                 print(folder, "finished")
 
 
-def invert_bg(X):
+def invert_bg(X, black_channel=None):
     white_bg = np.ones_like(X)
     white_bg[:, :, [0, 1]] -= np.repeat(X[:, :, None, 2], 2, -1)
     white_bg[:, :, [0, 2]] -= np.repeat(X[:, :, None, 1], 2, -1)
     white_bg[:, :, [1, 2]] -= np.repeat(X[:, :, None, 0], 2, -1)
+
+    if black_channel is not None:
+        for h in range(black_channel.shape[0]):
+            for w in range(black_channel.shape[1]):
+                if black_channel[h][w] == 1.:
+                    white_bg[h, w, :] = 0.
+
+    else:
+        for h in range(white_bg.shape[0]):
+            for w in range(white_bg.shape[1]):
+                if X[h, w, 2] == 1.:
+                    white_bg[h, w, :] = 0.
 
     return white_bg
 
@@ -131,7 +144,7 @@ def vis_pred_path_task(batch_images, save_dir, pic_id):
     for row in batch_images:
         num_cols = max(num_cols, len(row))
 
-    grid = np.zeros((h * num_rows + sep * (num_rows - 1), w * num_cols + sep * (num_cols - 1), 3))
+    grid = np.ones((h * num_rows + sep * (num_rows - 1), w * num_cols + sep * (num_cols - 1), 3)) / 2.
 
     h_start = 0
     h_end = h
@@ -139,11 +152,10 @@ def vis_pred_path_task(batch_images, save_dir, pic_id):
         w_start = 0
         w_end = w
         for image in row:
-            # converting grayscale images to RGB
-            if len(image.shape) == 2:
-                image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
-            else:
+            if image.shape[-1] == 3:
                 image = invert_bg(image)
+            else:
+                image = invert_bg(image[:, :, :3], image[:, :, 3])
 
             grid[h_start: h_end, w_start: w_end, :] = image
 
@@ -153,8 +165,7 @@ def vis_pred_path_task(batch_images, save_dir, pic_id):
         h_start += (h + sep)
         h_end += (h + sep)
 
-    img = Image.fromarray(np.uint8(grid * 255.))
-    img.save(os.path.join(save_dir, str(pic_id) + '.png'))
+    plt.imsave(os.path.join(save_dir, str(pic_id) + '.png'), grid)
 
 
 def vis_pred_path(batch_images, save_dir, pic_id):

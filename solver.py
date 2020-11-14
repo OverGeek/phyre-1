@@ -246,6 +246,11 @@ if __name__ == "__main__":
                     print(model_path, eval_setup, fold_id, "|| training 'generative' models...")
                     solver.train_supervised(epochs=epochs, train_mode=train_mode)
 
+            if "-save" in sys.argv:
+                print(model_path, eval_setup, fold_id, "|| saving models...")
+                solver.save_models(setup=eval_setup, fold=fold_id)
+                print("Models saved")
+
             if "-train_sfm1" in sys.argv:
                 print(model_path, eval_setup, fold_id, "|| loading data for generative training...")
                 solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle)
@@ -253,17 +258,22 @@ if __name__ == "__main__":
                 print(model_path, eval_setup, fold_id, "|| training 'generative' models...")
                 solver.train_sfm1(epochs=epochs, setup=eval_setup)
 
-            if "-save" in sys.argv:
-                print(model_path, eval_setup, fold_id, "|| saving models...")
-                solver.save_models(setup=eval_setup, fold=fold_id)
-                print("Models saved")
-
             if "-save_sfm1_paths" in sys.argv:
                 solver.save_sfm1_paths(dir='./SfM1_paths', setup=eval_setup, fold=fold_id, n_per_task=nper)
 
             if "-train_sfm2" in sys.argv:
                 solver.load_processed_data_sfm2(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle)
                 solver.train_sfm2(epochs=epochs, setup=eval_setup)
+
+            if "-save_sfm1" in sys.argv:
+                print(model_path, eval_setup, fold_id, "|| saving models...")
+                solver.save_sfm1(setup=eval_setup, fold=fold_id)
+                print("Models saved")
+
+            if "-save_sfm2" in sys.argv:
+                print(model_path, eval_setup, fold_id, "|| saving models...")
+                solver.save_sfm2(setup=eval_setup, fold=fold_id)
+                print("Models saved")
 
             if "-inspect" in sys.argv:
                 if type == "brute":
@@ -285,8 +295,7 @@ if __name__ == "__main__":
                     solver.inspect_supervised(eval_setup, fold_id)
 
             if "-make_visuals" in sys.argv:
-                dir = './proposalNet_result'
-                solver.make_visualisation(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle, dir=dir)
+                solver.make_visualisation(setup=eval_setup, fold=fold_id, n_per_task=nper)
 
             if "-solve" in sys.argv:
                 print(model_path, eval_setup, fold_id, "|| getting auccess...")

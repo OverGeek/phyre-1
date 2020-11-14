@@ -2062,14 +2062,22 @@ class FlownetSolver():
             handle.write(f"{self.modeltype} {setup} {fold}")
 
     def make_visualisation(self, setup='ball_within_template', fold=0, train_tasks=[], test_tasks=[],
-                           brute_search=False, dir=dir,
-                           n_per_task=1, shuffle=False, test=False, setup_name="all-tasks", proposal_dict=None):
+                           n_per_task=1, setup_name="all-tasks", proposal_dict=None,
+                           model='sfm2'):
 
-        MODEL_PATH = f'./saves/flownet/{setup}/SfM1.pt'
-        SfMNet1 = self.models["SfM1"]
-        SfMNet1.load_state_dict(T.load(MODEL_PATH))
-        SfMNet1.to(self.device).eval()
-        save_img_dir = f'./proposalNet_result/{setup}/grid'
+        if model == "sfm1":
+            MODEL_PATH = f'./saves/flownet/{setup}/SfM1.pt'
+            net = self.models["SfM1"]
+            net.load_state_dict(T.load(MODEL_PATH))
+            net.to(self.device).eval()
+            save_img_dir = f'./proposalNet_result/{setup}/SfM1/grid'
+        elif model == "sfm2":
+            MODEL_PATH = f'./saves/flownet/{setup}/SfM2.pt'
+            net = self.models["SfM2"]
+            net.load_state_dict(T.load(MODEL_PATH))
+            net.to(self.device).eval()
+            save_img_dir = f'./proposalNet_result/{setup}/SfM2/grid'
+
         pic_id = 1
 
         fold_id = fold
@@ -2084,81 +2092,158 @@ class FlownetSolver():
             if proposal_dict is not None:
                 setup_name = setup_name + "_proposals"
 
-        train_ids, dev_ids, test_ids = phyre.get_fold(eval_setup, fold_id)
+        with open("./phyre_get_fold.pickle", "rb") as f:
+            x = pickle.load(f)
+        train_ids, dev_ids, test_ids = x
         train_ids += dev_ids + test_ids
         train_ids = sorted(train_ids)
+
+        # train_ids, dev_ids, test_ids = phyre.get_fold(eval_setup, fold_id)
+        # train_ids += dev_ids + test_ids
+        # train_ids = sorted(train_ids)
 
         data = make_mono_dataset_2(
             f"data/{setup_name}_fold_{fold_id}_train_{width}xy_{n_per_task}n",
             size=(width, width), tasks=train_ids, n_per_task=n_per_task,
             proposal_dict=proposal_dict, dijkstra=self.dijkstra, save=False)
 
-        procesed_data = []
+        load_path = f"data/{setup_name}_fold_{fold_id}_train_{width}xy_{n_per_task}n"
 
-        obj_idxs = range(6)
-        static_obj_idxs = [3, 5]
-        rows = []
-        for i in tqdm(range(len(data))):
-            X = data[i]
-            X = np.true_divide(X, 255.)
-            init_scene = X[:6]
-            paths = X[6:]
+        if model == "sfm1":
+            obj_idxs = range(6)
+            static_obj_idxs = [3, 5]
+            rows = []
+            for i in tqdm(range(len(data))):
+                X = data[i]
+                X = np.true_divide(X, 255.)
+                init_scene = X[:6]
+                paths = X[6:]
 
-            row = []
-            for obj_idx in obj_idxs:
-                # skip for static objects
-                if obj_idx in static_obj_idxs:
-                    continue
+                row = []
+                for obj_idx in obj_idxs:
+                    # skip for static objects
+                    if obj_idx in static_obj_idxs:
+                        continue
 
-                # skip if object corresponding to obj_idx is not in scene
-                if not obj_in_scene(init_scene[obj_idx]):
-                    continue
+                    # skip if object corresponding to obj_idx is not in scene
+                    if not obj_in_scene(init_scene[obj_idx]):
+                        continue
 
-                # Current object
-                current_obj_channel = init_scene[obj_idx]
-                current_obj_path_channel = paths[obj_idx]
+                    # Current object
+                    current_obj_channel = init_scene[obj_idx]
+                    current_obj_path_channel = paths[obj_idx]
 
-                # Dynamic objects
-                dynamic_obj_idxs = [idx for idx in obj_idxs if idx not in static_obj_idxs
-                                    and obj_in_scene(init_scene[idx]) and idx != obj_idx]
-                dynamic_obj_channel = np.max(init_scene[dynamic_obj_idxs], axis=0)
-                dynamic_obj_path_channel = np.max(paths[dynamic_obj_idxs], axis=0)
+                    # Dynamic objects
+                    dynamic_obj_idxs = [idx for idx in obj_idxs if idx not in static_obj_idxs
+                                        and obj_in_scene(init_scene[idx]) and idx != obj_idx]
+                    dynamic_obj_channel = np.max(init_scene[dynamic_obj_idxs], axis=0)
+                    dynamic_obj_path_channel = np.max(paths[dynamic_obj_idxs], axis=0)
 
-                # Static objects
-                static_obj_idxs_in_scene = [idx for idx in static_obj_idxs
-                                            if obj_in_scene(init_scene[idx])]
-                if len(static_obj_idxs_in_scene) > 0:
-                    static_obj_channel = np.max(init_scene[static_obj_idxs_in_scene], axis=0)
-                else:
-                    static_obj_channel = np.zeros((init_scene.shape[1], init_scene.shape[2]))
+                    # Static objects
+                    static_obj_idxs_in_scene = [idx for idx in static_obj_idxs
+                                                if obj_in_scene(init_scene[idx])]
+                    if len(static_obj_idxs_in_scene) > 0:
+                        static_obj_channel = np.max(init_scene[static_obj_idxs_in_scene], axis=0)
+                    else:
+                        static_obj_channel = np.zeros((init_scene.shape[1], init_scene.shape[2]))
 
-                current_obj_channel = np.expand_dims(current_obj_channel, axis=0)
-                dynamic_obj_channel = np.expand_dims(dynamic_obj_channel, axis=0)
-                static_obj_channel = np.expand_dims(static_obj_channel, axis=0)
-                current_obj_path_channel = np.expand_dims(current_obj_path_channel, axis=0)
-                dynamic_obj_path_channel = np.expand_dims(dynamic_obj_path_channel, axis=0)
+                    current_obj_channel = np.expand_dims(current_obj_channel, axis=0)
+                    dynamic_obj_channel = np.expand_dims(dynamic_obj_channel, axis=0)
+                    static_obj_channel = np.expand_dims(static_obj_channel, axis=0)
+                    current_obj_path_channel = np.expand_dims(current_obj_path_channel, axis=0)
+                    dynamic_obj_path_channel = np.expand_dims(dynamic_obj_path_channel, axis=0)
 
-                # Processed data
-                input_initial_scene = np.concatenate([current_obj_channel, dynamic_obj_channel,
-                                                      static_obj_channel], axis=0)
+                    # Processed data
+                    input_initial_scene = np.concatenate([current_obj_channel, dynamic_obj_channel,
+                                                          static_obj_channel], axis=0)
 
-                predicted_path = SfMNet1(T.tensor(input_initial_scene).float().to(self.device)[None])[0][0]
-                predicted_path = predicted_path.cpu().detach().numpy()[:, :, None]
+                    predicted_path = net(T.tensor(input_initial_scene).float().to(self.device)[None])[0][0]
+                    predicted_path = predicted_path.cpu().detach().numpy()[:, :, None]
 
-                # visulisation
-                if len(row) == 0:
-                    row.append(np.moveaxis(input_initial_scene, 0, -1))  # appending the initial scene
+                    # visulisation
+                    if len(row) == 0:
+                        row.append(np.moveaxis(input_initial_scene, 0, -1))  # appending the initial scene
 
-                empty_channel = np.zeros(predicted_path.shape)
-                row.append(np.concatenate([predicted_path, empty_channel, empty_channel], axis=-1))
-                row.append(np.concatenate([np.moveaxis(current_obj_path_channel, 0, -1),
-                                           empty_channel, empty_channel], axis=-1))
+                    empty_channel = np.zeros(predicted_path.shape)
+                    row.append(np.concatenate([predicted_path, empty_channel, empty_channel], axis=-1))
+                    row.append(np.concatenate([np.moveaxis(current_obj_path_channel, 0, -1),
+                                               empty_channel, empty_channel], axis=-1))
 
-            rows.append(row)
-            if len(rows) == 100:
-                vis_pred_path_task(rows, save_img_dir, pic_id)
-                pic_id += 1
-                rows = []
+                rows.append(row)
+                if len(rows) == 100:
+                    vis_pred_path_task(rows, save_img_dir, pic_id)
+                    pic_id += 1
+                    rows = []
+
+        elif model == "sfm2":
+            with gzip.open(load_path + '/sfm1_paths.pickle', 'rb') as fp:
+                sfm1_paths = pickle.load(fp)
+
+            obj_idxs = range(6)
+            static_obj_idxs = [3, 5]
+            rows = []
+            for i in tqdm(range(len(data))):
+                X = data[i]
+                X = np.true_divide(X, 255.)
+                init_scene = X[:6]
+                paths = sfm1_paths[i]
+                ground_truth_paths = X[6:]
+
+                row = []
+                for obj_idx in obj_idxs:
+                    # skip for static objects
+                    if obj_idx in static_obj_idxs:
+                        continue
+
+                    # skip if object corresponding to obj_idx is not in scene
+                    if not obj_in_scene(init_scene[obj_idx]):
+                        continue
+
+                    # Current object
+                    current_obj_channel = init_scene[obj_idx]
+                    current_obj_path_channel = paths[obj_idx]
+
+                    # Dynamic objects
+                    dynamic_obj_idxs = [idx for idx in obj_idxs if idx not in static_obj_idxs
+                                        and obj_in_scene(init_scene[idx]) and idx != obj_idx]
+                    dynamic_obj_channel = np.max(init_scene[dynamic_obj_idxs], axis=0)
+                    dynamic_obj_path_channel = np.max(paths[dynamic_obj_idxs], axis=0)
+
+                    # Static objects
+                    static_obj_idxs_in_scene = [idx for idx in static_obj_idxs
+                                                if obj_in_scene(init_scene[idx])]
+                    if len(static_obj_idxs_in_scene) > 0:
+                        static_obj_channel = np.max(init_scene[static_obj_idxs_in_scene], axis=0)
+                    else:
+                        static_obj_channel = np.zeros((init_scene.shape[1], init_scene.shape[2]))
+
+                    current_obj_channel = np.expand_dims(current_obj_channel, axis=0)
+                    dynamic_obj_channel = np.expand_dims(dynamic_obj_channel, axis=0)
+                    static_obj_channel = np.expand_dims(static_obj_channel, axis=0)
+                    current_obj_path_channel = np.expand_dims(current_obj_path_channel, axis=0)
+                    dynamic_obj_path_channel = np.expand_dims(dynamic_obj_path_channel, axis=0)
+
+                    # Processed data
+                    input_channels = np.concatenate([current_obj_channel, dynamic_obj_channel,
+                                                     static_obj_channel, current_obj_path_channel,
+                                                     dynamic_obj_path_channel], axis=0)
+
+                    predicted_path = net(T.tensor(input_channels).float().to(self.device)[None])[0][0]
+                    predicted_path = predicted_path.cpu().detach().numpy()[:, :, None]
+
+                    # visualisation
+                    row.append(np.moveaxis(input_channels[:3], 0, -1))  # appending the initial scene
+
+                    row.append(np.concatenate([ground_truth_paths[obj_idx][:, :, None],
+                                               np.moveaxis(dynamic_obj_channel, 0, -1),
+                                               predicted_path,
+                                               np.moveaxis(static_obj_channel, 0, -1)], axis=-1))
+
+                rows.append(row)
+                if len(rows) == 100:
+                    vis_pred_path_task(rows, save_img_dir, pic_id)
+                    pic_id += 1
+                    rows = []
 
     def load_processed_data_sfm1(self, setup='ball_within_template', fold=0, train_tasks=[], test_tasks=[],
                                  brute_search=False,
@@ -3580,6 +3665,24 @@ class FlownetSolver():
         for model in self.models:
             print("saving:", save_path + f'/{model}.pt')
             T.save(self.models[model].state_dict(), save_path + f'/{model}.pt')
+
+    def save_sfm1(self, setup="ball_within_template", fold=0):
+        setup_name = "within" if setup == 'ball_within_template' else (
+            "cross" if setup == 'ball_cross_template' else "custom")
+        save_path = f"saves/flownet/{setup}"
+        os.makedirs(save_path, exist_ok=True)
+        model = "SfM1"
+        print("saving:", save_path + f'/{model}.pt')
+        T.save(self.models[model].state_dict(), save_path + f'/{model}.pt')
+
+    def save_sfm2(self, setup="ball_within_template", fold=0):
+        setup_name = "within" if setup == 'ball_within_template' else (
+            "cross" if setup == 'ball_cross_template' else "custom")
+        save_path = f"saves/flownet/{setup}"
+        os.makedirs(save_path, exist_ok=True)
+        model = "SfM2"
+        print("saving:", save_path + f'/{model}.pt')
+        T.save(self.models[model].state_dict(), save_path + f'/{model}.pt')
 
 
 def neighbs(pos, shape, back, value):
