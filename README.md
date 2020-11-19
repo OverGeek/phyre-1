@@ -20,5 +20,7 @@ From left to right: True Target Trajectory, Generated Target Trajectory, Base Tr
 ![Results](/result/scnn/a-path/a-path-results.png)
 
 ## ProposalNet: NN to predict path of dynamic objects
-Results from SfM2
+Results from SfM2 Learner
+
+
 ![Results](/proposalNet_result/ball_within_template/SfM2/grid/150.png)
