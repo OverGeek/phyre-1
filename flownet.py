@@ -2590,7 +2590,7 @@ class FlownetSolver():
         opti = T.optim.Adam(SfMNet.parameters(recurse=True), lr=3e-4)
 
         load_path = f"data/{setup.split('_')[1]}_fold_{fold}_train_{width}xy_{n_per_task}n/data_sequential"
-        sequential_data = np.empty((0, 22, width, width), int)
+        sequential_data = np.empty((0, 23, width, width), int)
 
         for task_file in os.listdir(load_path):
             task_file_path = os.path.join(load_path, task_file)
@@ -2613,7 +2613,7 @@ class FlownetSolver():
                 current_obj_frames = X[:, :10]
                 next_current_obj_frame = X[:, 10]
                 dynamic_obj_frames = X[:, 11: 21]
-                static_obj_frame = X[:, 21][:, None]
+                static_obj_frame = X[:, 22][:, None]
 
                 sfm_input = T.cat([current_obj_frames, dynamic_obj_frames, static_obj_frame], axis=1)
 
