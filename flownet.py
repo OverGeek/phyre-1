@@ -2638,7 +2638,7 @@ class FlownetSolver():
                 loss = sum(loss_all_scales) / len(loss_all_scales)
                 print(epoch, i, loss_all_scales[0].item())
 
-                if i % 25 == 0:
+                if i % 500 == 0:
                     empty_channel = T.zeros((32, 1, width, width)).to(self.device)
 
                     current_obj_next_state = T.cat([predicted_path_all_scales[0], empty_channel,
