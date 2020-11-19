@@ -75,7 +75,7 @@ def collect_solving_dataset_sequential_paths(path_str, tasks, n_per_task=10, col
 
     tasks = [task for task in tasks if not (task.startswith("00018") or task.startswith("00023"))]
 
-    for task_idx, task in enumerate(tasks[:5]):
+    for task_idx, task in enumerate(tasks[:]):
         # COLLECT SOLVES
         solved = 0
         if proposal_dict is not None:
