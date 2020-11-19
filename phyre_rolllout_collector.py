@@ -13,6 +13,11 @@ from dijkstra import find_distance_map_obj
 import gzip
 
 
+def obj_in_scene(X):
+    ret = True if np.max(X) == 1 else False
+    return ret
+
+
 def collect_images():
     tries = 0
     tasks = ['00000:001', '00000:002', '00000:003', '00000:004', '00000:005',
@@ -47,6 +52,107 @@ def collect_images():
                         # print(res.featurized_objects)
                     with open(path_str + "/action.txt", 'w') as handle:
                         handle.write(str(action))
+
+
+def collect_solving_dataset_sequential_paths(path_str, tasks, n_per_task=10, collect_base=True, stride=10,
+                                             size=(32, 32), seq_len=10,
+                                             solving=True,
+                                             proposal_dict=None, dijkstra=False, save=True):
+    end_char = '\n'
+    tries = 0
+    max_tries = 510
+    base_path = path_str
+    number_to_solve = 1
+    cache = phyre.get_default_100k_cache('ball')
+    actions = cache.action_array
+
+    channels = range(1, 7)
+    static_obj_idxs = [4, 6]
+    data = []
+    lib_dict = dict()
+
+    sim = phyre.initialize_simulator(tasks, 'ball')
+
+    tasks = [task for task in tasks if not (task.startswith("00018") or task.startswith("00023"))]
+
+    for task_idx, task in enumerate(tasks[:5]):
+        # COLLECT SOLVES
+        solved = 0
+        if proposal_dict is not None:
+            proposal_list = [item for item in proposal_dict[task]]
+        cache_list = actions[cache.load_simulation_states(task) == (1 if solving else -1)]
+        while solved < number_to_solve:
+            print(f"collecting {task}: trial {solved} with {tries + 1} tries", end=end_char)
+            tries += 1
+            if tries < max_tries - 10 and (proposal_dict is not None):
+                actionlist = proposal_list
+            else:
+                actionlist = cache_list
+
+            if len(actionlist) == 0:
+                print("WARNING no solution action in cache at task", task)
+                actionlist = [np.random.rand(3)]
+            action = random.choice(actionlist)
+            res = sim.simulate_action(task_idx, action,
+                                      need_featurized_objects=True, stride=stride)
+
+            # IF SOLVED PROCESS ROLLOUT
+            if (res.status.is_solved() == solving) and not res.status.is_invalid():
+                tries = 0
+                solved += 1
+
+                obj_channels = np.array([(res.images[0] == ch).astype(float) for ch in channels])
+
+                paths = []
+                for obj_idx in channels:
+
+                    if obj_idx in static_obj_idxs:
+                        continue
+                    if not obj_in_scene(obj_channels[obj_idx - 1]):
+                        continue
+
+                    current_obj_frames = np.array([np.array(
+                        [cv2.resize((scene == obj_idx).astype(float), size, cv2.INTER_MAX) for scene in
+                         res.images[i: i + seq_len]])
+                        for i in range(0, len(res.images) - seq_len)])
+                    current_obj_frames = np.flip(current_obj_frames, axis=-2)
+
+                    dynamic_obj_idxs = [idx for idx in channels if idx not in static_obj_idxs
+                                        and obj_in_scene(obj_channels[idx - 1]) and idx != obj_idx]
+
+                    dynamic_obj_frames = np.array([[np.array(
+                        [cv2.resize((scene == idx).astype(float), size, cv2.INTER_MAX) for scene in
+                         res.images[i: i + seq_len]])
+                        for i in range(0, len(res.images) - seq_len)] for idx in dynamic_obj_idxs])
+
+                    dynamic_obj_frames = np.max(dynamic_obj_frames, axis=0)
+                    dynamic_obj_frames = np.flip(dynamic_obj_frames, axis=-2)
+
+                    static_obj_frames = np.array([obj_channels[idx - 1] for idx in static_obj_idxs])
+
+                    static_obj_frames = cv2.resize(np.max(static_obj_frames, axis=0),
+                                                   size, cv2.INTER_MAX)[None][None]
+                    static_obj_frames = np.repeat(static_obj_frames,
+                                                  current_obj_frames.shape[0],
+                                                  axis=0)
+                    static_obj_frames = np.flip(static_obj_frames, axis=-2)
+
+                    paths.append(np.concatenate([current_obj_frames,
+                                                 dynamic_obj_frames,
+                                                 static_obj_frames],
+                                                axis=1))
+
+                paths = np.array(paths)
+                paths = (255 * paths).astype(np.uint8)
+                os.makedirs(path_str+'/data_sequential', exist_ok=True)
+                file = gzip.GzipFile(path_str + f'/data_sequential/{task}.pickle', 'wb')
+                pickle.dump(paths, file)
+                file.close()
+
+            if tries > max_tries:
+                break
+
+    print(f"FINISH collecting {'solving' if solving else 'failing'} dataset!")
 
 
 def collect_solving_dataset_paths(path_str, tasks, n_per_task=10, collect_base=True, stride=10, size=(32, 32),
