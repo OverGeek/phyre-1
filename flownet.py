@@ -9,12 +9,12 @@ from phyre_rolllout_collector import load_phyre_rollouts, collect_solving_datase
 from cv2 import resize, imshow, waitKey
 import cv2
 from phyre_utils import draw_ball, grow_action_vector, vis_batch, make_mono_dataset, action_delta_generator, gifify, \
-    vis_pred_path, vis_pred_path_task, make_mono_dataset_2
+    vis_pred_path, vis_pred_path_task, make_mono_dataset_2, make_mono_dataset_sequential
 from itertools import chain
 import argparse
 import os
 import random
-import phyre
+# import phyre
 from dijkstra import find_distance_map_obj
 import torch
 import torch.nn as nn
@@ -751,6 +751,7 @@ class FlownetSolver():
         elif modeltype == "SfMLearner":
             self.models["SfM1"] = DispNetS(alpha=1.0, beta=0.0, inp_channels=3)
             self.models["SfM2"] = DispNetS(alpha=1.0, beta=0.0, inp_channels=5)
+            self.models["SfM_sequential"] = DispNetS(alpha=1.0, beta=0.0, inp_channels=21)
 
         else:
             print("ERROR modeltype not understood", modeltype)
@@ -2014,7 +2015,8 @@ class FlownetSolver():
                       f'{task}_best_actions_diff', text=text)
 
     def load_data(self, setup='ball_within_template', fold=0, train_tasks=[], test_tasks=[], brute_search=False,
-                  n_per_task=1, shuffle=True, test=False, setup_name="all-tasks", proposal_dict=None):
+                  n_per_task=1, shuffle=True, test=False, setup_name="all-tasks", proposal_dict=None,
+                  sequential=False):
         fold_id = fold
         eval_setup = setup
         width = self.width
@@ -2034,10 +2036,16 @@ class FlownetSolver():
             test_ids = dev_ids + test_ids
 
         if not test:
-            make_mono_dataset_2(
-                f"data/{setup_name}_fold_{fold_id}_train_{width}xy_{n_per_task}n",
-                size=(width, width), tasks=train_ids[:], batch_size=batchsize // 2 if brute_search else batchsize,
-                n_per_task=n_per_task, shuffle=shuffle, proposal_dict=proposal_dict, dijkstra=self.dijkstra)
+            if not sequential:
+                make_mono_dataset_2(
+                    f"data/{setup_name}_fold_{fold_id}_train_{width}xy_{n_per_task}n",
+                    size=(width, width), tasks=train_ids[:], batch_size=batchsize // 2 if brute_search else batchsize,
+                    n_per_task=n_per_task, shuffle=shuffle, proposal_dict=proposal_dict, dijkstra=self.dijkstra)
+            else:
+                make_mono_dataset_sequential(
+                    f"data/{setup_name}_fold_{fold_id}_train_{width}xy_{n_per_task}n",
+                    size=(width, width), tasks=train_ids[:], batch_size=batchsize // 2 if brute_search else batchsize,
+                    n_per_task=n_per_task, shuffle=shuffle, proposal_dict=proposal_dict, dijkstra=self.dijkstra)
         else:
             self.test_dataloader, self.test_index = make_mono_dataset(
                 f"data/{setup_name}_fold_{fold_id}_test_{width}xy_{n_per_task}n",
@@ -2573,6 +2581,88 @@ class FlownetSolver():
         pickle.dump(sfm1_paths, file)
         file.close()
         print("SfM1 paths saved")
+
+    def train_sfm_sequential(self, setup, epochs=10, width=128, n_per_task=10, fold=0, batchsize=32):
+        SfMNet = self.models["SfM_sequential"]
+        self.to_train()
+        loss_log = []
+
+        opti = T.optim.Adam(SfMNet.parameters(recurse=True), lr=3e-4)
+
+        load_path = f"data/{setup.split('_')[1]}_fold_{fold}_train_{width}xy_{n_per_task}n/data_sequential"
+        sequential_data = np.empty((0, 22, width, width), int)
+
+        for task_file in os.listdir(load_path):
+            task_file_path = os.path.join(load_path, task_file)
+            with gzip.open(task_file_path, 'rb') as fp:
+                row = pickle.load(fp)
+                row = row.reshape(-1, row.shape[-3],
+                                  row.shape[-2],
+                                  row.shape[-1])
+
+                sequential_data = np.append(sequential_data, row, axis=0)
+
+        X = T.tensor(sequential_data).float()
+        data_loader = T.utils.data.DataLoader(T.utils.data.TensorDataset(X),
+                                              batchsize, shuffle=True)
+
+        for epoch in range(epochs):
+            for i, (X,) in enumerate(data_loader):
+                X = X.to(self.device)
+
+                current_obj_frames = X[:, :10]
+                next_current_obj_frame = X[:, 10]
+                dynamic_obj_frames = X[:, 11: 21]
+                static_obj_frame = X[:, 21][:, None]
+
+                sfm_input = T.cat([current_obj_frames, dynamic_obj_frames, static_obj_frame], axis=1)
+
+                # for 4-headed loss
+                next_current_obj_frame_128 = next_current_obj_frame
+                next_current_obj_frame_64 = self.resize_tensor(next_current_obj_frame, 64).squeeze(1)
+                next_current_obj_frame_32 = self.resize_tensor(next_current_obj_frame, 32).squeeze(1)
+                next_current_obj_frame_16 = self.resize_tensor(next_current_obj_frame, 16).squeeze(1)
+                next_current_obj_frame_all_scales = [next_current_obj_frame_128,
+                                                     next_current_obj_frame_64,
+                                                     next_current_obj_frame_32,
+                                                     next_current_obj_frame_16]
+
+                predicted_path_all_scales = SfMNet(sfm_input)
+
+                loss_all_scales = []
+                for predicted_path, gt_path in zip(predicted_path_all_scales,
+                                                   next_current_obj_frame_all_scales):
+                    loss_one_scale = F.binary_cross_entropy(predicted_path, gt_path.unsqueeze(1))
+                    loss_all_scales.append(loss_one_scale)
+
+                loss = sum(loss_all_scales) / len(loss_all_scales)
+                print(epoch, i, loss_all_scales[0].item())
+
+                if i % 25 == 0:
+                    empty_channel = T.zeros((32, 1, width, width)).to(self.device)
+
+                    current_obj_next_state = T.cat([predicted_path_all_scales[0], empty_channel,
+                                                    next_current_obj_frame[:, None]], axis=1).permute(0, 2, 3, 1)
+
+                    current_obj_path = np.max(current_obj_frames.cpu().numpy(), axis=1)[:, None]
+                    dynamic_obj_path = np.max(dynamic_obj_frames.cpu().numpy(), axis=1)[:, None]
+                    static_obj_path = static_obj_frame.cpu().numpy()
+
+                    init_path = np.concatenate([current_obj_path, dynamic_obj_path, static_obj_path],
+                                               axis=1)
+
+                    batch_images = [np.moveaxis(init_path, 1, -1), current_obj_next_state.cpu().detach().numpy()]
+
+                    vis_pred_path(batch_images, f'./proposalNet_result/{setup}/SfM_sequential', str(epoch) + "_" + str(i))
+
+                    loss_log.append([str(epoch) + "_" + str(i), loss_all_scales[0].item()])
+
+                opti.zero_grad()
+                loss.backward()
+                opti.step()
+
+        log_loss_df = pd.DataFrame(loss_log, columns=['Epoch and iteration', 'loss'])
+        log_loss_df.to_csv(f'./result/flownet/inspect/standard/default/{setup}/loss.csv', index=False)
 
     def train_sfm1(self, setup, epochs=10):
         SfMNet1 = self.models["SfM1"]
@@ -3659,6 +3749,15 @@ class FlownetSolver():
         for model in self.models:
             print("saving:", save_path + f'/{model}.pt')
             T.save(self.models[model].state_dict(), save_path + f'/{model}.pt')
+
+    def save_sfm_sequential(self, setup="ball_within_template", fold=0):
+        setup_name = "within" if setup == 'ball_within_template' else (
+            "cross" if setup == 'ball_cross_template' else "custom")
+        save_path = f"saves/flownet/{setup}"
+        os.makedirs(save_path, exist_ok=True)
+        model = "SfM_sequential"
+        print("saving:", save_path + f'/{model}.pt')
+        T.save(self.models[model].state_dict(), save_path + f'/{model}.pt')
 
     def save_sfm1(self, setup="ball_within_template", fold=0):
         setup_name = "within" if setup == 'ball_within_template' else (

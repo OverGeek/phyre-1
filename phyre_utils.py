@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from phyre_rolllout_collector import load_phyre_rollouts, collect_solving_observations, collect_solving_dataset, \
     collect_solving_dataset_paths, collect_solving_dataset_sequential_paths
 import cv2
-import phyre
+# import phyre
 import os
 import pickle
 import random
@@ -85,16 +85,23 @@ def make_mono_dataset(path, size=(32, 32), tasks=[], batch_size=32, solving=True
 
 def make_mono_dataset_2(path, size=(32, 32), tasks=[], batch_size=32, solving=True, n_per_task=1, shuffle=True,
                         proposal_dict=None, dijkstra=False, save=True):
-
-    if os.path.exists(path+'/data.pickle'):
+    if os.path.exists(path + '/data.pickle'):
         with gzip.open(path + '/data.pickle', 'rb') as fp:
             data = pickle.load(fp)
     else:
-        data = collect_solving_dataset_sequential_paths(path, tasks, n_per_task=n_per_task, stride=5, size=size, solving=solving,
-                                          proposal_dict=proposal_dict, dijkstra=dijkstra, save=save)
+        data = collect_solving_dataset_paths(path, tasks, n_per_task=n_per_task, stride=5, size=size,
+                                             solving=solving,
+                                             proposal_dict=proposal_dict, dijkstra=dijkstra, save=save)
 
     if not save:
         return data
+
+
+def make_mono_dataset_sequential(path, size=(32, 32), tasks=[], batch_size=32, solving=True, n_per_task=1, shuffle=True,
+                                 proposal_dict=None, dijkstra=False, save=True):
+    data = collect_solving_dataset_sequential_paths(path, tasks, n_per_task=n_per_task, stride=5, size=size,
+                                                    solving=solving,
+                                                    proposal_dict=proposal_dict, dijkstra=dijkstra, save=save)
 
 
 def shrink_data(path):

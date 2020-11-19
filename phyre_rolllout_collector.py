@@ -1,4 +1,4 @@
-import phyre
+# import phyre
 import cv2
 import pickle
 import pathlib
@@ -142,8 +142,7 @@ def collect_solving_dataset_sequential_paths(path_str, tasks, n_per_task=10, col
                                                  static_obj_frames],
                                                 axis=1))
 
-                paths = np.array(paths)
-                paths = (255 * paths).astype(np.uint8)
+                paths = np.array(paths).astype(np.uint8)
                 os.makedirs(path_str+'/data_sequential', exist_ok=True)
                 file = gzip.GzipFile(path_str + f'/data_sequential/{task}.pickle', 'wb')
                 pickle.dump(paths, file)

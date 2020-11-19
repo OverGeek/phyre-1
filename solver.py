@@ -258,8 +258,19 @@ if __name__ == "__main__":
                 print(model_path, eval_setup, fold_id, "|| training 'generative' models...")
                 solver.train_sfm1(epochs=epochs, setup=eval_setup)
 
+            if "-train_sfm_sequential" in sys.argv:
+                print(model_path, eval_setup, fold_id, "|| loading data for generative training...")
+                solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle, sequential=True)
+                print(model_path, eval_setup, fold_id, "|| training 'generative' models...")
+                solver.train_sfm_sequential(epochs=epochs, setup=eval_setup, width=width, n_per_task=nper, fold=fold_id)
+
             if "-save_sfm1_paths" in sys.argv:
                 solver.save_sfm1_paths(dir='./SfM1_paths', setup=eval_setup, fold=fold_id, n_per_task=nper)
+
+            if "-save_sfm_sequential" in sys.argv:
+                print(model_path, eval_setup, fold_id, "|| saving models...")
+                solver.save_sfm_sequential(setup=eval_setup, fold=fold_id)
+                print("Models saved")
 
             if "-train_sfm2" in sys.argv:
                 solver.load_processed_data_sfm2(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle)
