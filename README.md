@@ -19,8 +19,7 @@ SCNN generates feasability map of where the goal ball can be found in a solving 
 From left to right: True Target Trajectory, Generated Target Trajectory, Base Trajectory without Action, True Action Trajectory, Generated Action Trajectory
 ![Results](/result/scnn/a-path/a-path-results.png)
 
-## ProposalNet: NN to predict path of dynamic objects
+## ProposalNet: NN to predict paths of dynamic objects
 Results from SfM2 Learner
-
 
 ![Results](/proposalNet_result/ball_within_template/SfM2/grid/150.png)
