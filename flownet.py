@@ -14,7 +14,7 @@ from itertools import chain
 import argparse
 import os
 import random
-# import phyre
+import phyre
 from dijkstra import find_distance_map_obj
 import torch
 import torch.nn as nn

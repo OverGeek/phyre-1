@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from phyre_rolllout_collector import load_phyre_rollouts, collect_solving_observations, collect_solving_dataset, \
     collect_solving_dataset_paths, collect_solving_dataset_sequential_paths
 import cv2
-# import phyre
+import phyre
 import os
 import pickle
 import random

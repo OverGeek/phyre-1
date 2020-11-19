@@ -1,7 +1,7 @@
 from phyre_utils import pic_to_action_vector, pic_hist_to_action, vis_batch, make_mono_dataset, grow_action_vector, \
     action_delta_generator
 import torch as T
-# import phyre
+import phyre
 import numpy as np
 import cv2
 import json
