@@ -65,6 +65,7 @@ def collect_solving_dataset_sequential_paths(path_str, tasks, n_per_task=10, col
     number_to_solve = 1
     cache = phyre.get_default_100k_cache('ball')
     actions = cache.action_array
+    seq_len += 1
 
     channels = range(1, 7)
     static_obj_idxs = [4, 6]
