@@ -260,7 +260,7 @@ if __name__ == "__main__":
 
             if "-train_sfm_sequential" in sys.argv:
                 print(model_path, eval_setup, fold_id, "|| loading data for generative training...")
-                solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle, sequential=True)
+                # solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle, sequential=True)
                 print(model_path, eval_setup, fold_id, "|| training 'generative' models...")
                 solver.train_sfm_sequential(epochs=epochs, setup=eval_setup, width=width, n_per_task=nper, fold=fold_id)
 

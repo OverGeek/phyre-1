@@ -2590,76 +2590,82 @@ class FlownetSolver():
         opti = T.optim.Adam(SfMNet.parameters(recurse=True), lr=3e-4)
 
         load_path = f"data/{setup.split('_')[1]}_fold_{fold}_train_{width}xy_{n_per_task}n/data_sequential"
-        sequential_data = np.empty((0, 23, width, width), int)
 
-        for task_file in os.listdir(load_path):
-            task_file_path = os.path.join(load_path, task_file)
-            with gzip.open(task_file_path, 'rb') as fp:
-                row = pickle.load(fp)
-                row = row.reshape(-1, row.shape[-3],
-                                  row.shape[-2],
-                                  row.shape[-1])
+        n_splits = 4  # divide dataset into n splits
+        len_split = len(os.listdir(load_path)) // n_splits
 
-                sequential_data = np.append(sequential_data, row, axis=0)
+        for part in range(0, len(os.listdir(load_path)), len_split):
+            sequential_data = np.empty((0, 23, width, width), np.uint8)
 
-        X = T.tensor(sequential_data).float()
-        data_loader = T.utils.data.DataLoader(T.utils.data.TensorDataset(X),
-                                              batchsize, shuffle=True)
+            for task_file in os.listdir(load_path)[part: part + len_split]:
+                task_file_path = os.path.join(load_path, task_file)
+                with gzip.open(task_file_path, 'rb') as fp:
+                    row = pickle.load(fp)
+                    row = row.reshape(-1, row.shape[-3],
+                                      row.shape[-2],
+                                      row.shape[-1])
 
-        for epoch in range(epochs):
-            for i, (X,) in enumerate(data_loader):
-                X = X.to(self.device)
+                    sequential_data = np.append(sequential_data, row, axis=0)
 
-                current_obj_frames = X[:, :10]
-                next_current_obj_frame = X[:, 10]
-                dynamic_obj_frames = X[:, 11: 21]
-                static_obj_frame = X[:, 22][:, None]
+            X = T.tensor(sequential_data).float()
+            data_loader = T.utils.data.DataLoader(T.utils.data.TensorDataset(X),
+                                                  batchsize, shuffle=True)
 
-                sfm_input = T.cat([current_obj_frames, dynamic_obj_frames, static_obj_frame], axis=1)
+            for epoch in range(epochs):
+                for i, (X,) in enumerate(data_loader):
+                    X = X.to(self.device)
 
-                # for 4-headed loss
-                next_current_obj_frame_128 = next_current_obj_frame
-                next_current_obj_frame_64 = self.resize_tensor(next_current_obj_frame, 64).squeeze(1)
-                next_current_obj_frame_32 = self.resize_tensor(next_current_obj_frame, 32).squeeze(1)
-                next_current_obj_frame_16 = self.resize_tensor(next_current_obj_frame, 16).squeeze(1)
-                next_current_obj_frame_all_scales = [next_current_obj_frame_128,
-                                                     next_current_obj_frame_64,
-                                                     next_current_obj_frame_32,
-                                                     next_current_obj_frame_16]
+                    current_obj_frames = X[:, :10]
+                    next_current_obj_frame = X[:, 10]
+                    dynamic_obj_frames = X[:, 11: 21]
+                    static_obj_frame = X[:, 22][:, None]
 
-                predicted_path_all_scales = SfMNet(sfm_input)
+                    sfm_input = T.cat([current_obj_frames, dynamic_obj_frames, static_obj_frame], axis=1)
 
-                loss_all_scales = []
-                for predicted_path, gt_path in zip(predicted_path_all_scales,
-                                                   next_current_obj_frame_all_scales):
-                    loss_one_scale = F.binary_cross_entropy(predicted_path, gt_path.unsqueeze(1))
-                    loss_all_scales.append(loss_one_scale)
+                    # for 4-headed loss
+                    next_current_obj_frame_128 = next_current_obj_frame
+                    next_current_obj_frame_64 = self.resize_tensor(next_current_obj_frame, 64).squeeze(1)
+                    next_current_obj_frame_32 = self.resize_tensor(next_current_obj_frame, 32).squeeze(1)
+                    next_current_obj_frame_16 = self.resize_tensor(next_current_obj_frame, 16).squeeze(1)
+                    next_current_obj_frame_all_scales = [next_current_obj_frame_128,
+                                                         next_current_obj_frame_64,
+                                                         next_current_obj_frame_32,
+                                                         next_current_obj_frame_16]
 
-                loss = sum(loss_all_scales) / len(loss_all_scales)
-                print(epoch, i, loss_all_scales[0].item())
+                    predicted_path_all_scales = SfMNet(sfm_input)
 
-                if i % 500 == 0:
-                    empty_channel = T.zeros((32, 1, width, width)).to(self.device)
+                    loss_all_scales = []
+                    for predicted_path, gt_path in zip(predicted_path_all_scales,
+                                                       next_current_obj_frame_all_scales):
+                        loss_one_scale = F.binary_cross_entropy(predicted_path, gt_path.unsqueeze(1))
+                        loss_all_scales.append(loss_one_scale)
 
-                    current_obj_next_state = T.cat([predicted_path_all_scales[0], empty_channel,
-                                                    next_current_obj_frame[:, None]], axis=1).permute(0, 2, 3, 1)
+                    loss = sum(loss_all_scales) / len(loss_all_scales)
+                    print(epoch, i, loss_all_scales[0].item())
 
-                    current_obj_path = np.max(current_obj_frames.cpu().numpy(), axis=1)[:, None]
-                    dynamic_obj_path = np.max(dynamic_obj_frames.cpu().numpy(), axis=1)[:, None]
-                    static_obj_path = static_obj_frame.cpu().numpy()
+                    if i % 500 == 0:
+                        empty_channel = T.zeros((32, 1, width, width)).to(self.device)
 
-                    init_path = np.concatenate([current_obj_path, dynamic_obj_path, static_obj_path],
-                                               axis=1)
+                        current_obj_next_state = T.cat([predicted_path_all_scales[0], empty_channel,
+                                                        next_current_obj_frame[:, None]], axis=1).permute(0, 2, 3, 1)
 
-                    batch_images = [np.moveaxis(init_path, 1, -1), current_obj_next_state.cpu().detach().numpy()]
+                        current_obj_path = np.max(current_obj_frames.cpu().numpy(), axis=1)[:, None]
+                        dynamic_obj_path = np.max(dynamic_obj_frames.cpu().numpy(), axis=1)[:, None]
+                        static_obj_path = static_obj_frame.cpu().numpy()
 
-                    vis_pred_path(batch_images, f'./proposalNet_result/{setup}/SfM_sequential', str(epoch) + "_" + str(i))
+                        init_path = np.concatenate([current_obj_path, dynamic_obj_path, static_obj_path],
+                                                   axis=1)
 
-                    loss_log.append([str(epoch) + "_" + str(i), loss_all_scales[0].item()])
+                        batch_images = [np.moveaxis(init_path, 1, -1), current_obj_next_state.cpu().detach().numpy()]
 
-                opti.zero_grad()
-                loss.backward()
-                opti.step()
+                        vis_pred_path(batch_images, f'./proposalNet_result/{setup}/SfM_sequential',
+                                      str(epoch) + "_" + str(i))
+
+                        loss_log.append([str(epoch) + "_" + str(i), loss_all_scales[0].item()])
+
+                    opti.zero_grad()
+                    loss.backward()
+                    opti.step()
 
         log_loss_df = pd.DataFrame(loss_log, columns=['Epoch and iteration', 'loss'])
         log_loss_df.to_csv(f'./result/flownet/inspect/standard/default/{setup}/loss.csv', index=False)
