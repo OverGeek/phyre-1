@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import torch as T
 import torch.nn.functional as F
 from phyre_rolllout_collector import load_phyre_rollouts, collect_solving_observations, collect_solving_dataset, \
-    collect_solving_dataset_paths, collect_solving_dataset_sequential_paths
+    collect_solving_dataset_paths, collect_solving_dataset_sequential_paths, collect_sequential_path_features_dataset
 import cv2
 import phyre
 import os
@@ -99,7 +99,7 @@ def make_mono_dataset_2(path, size=(32, 32), tasks=[], batch_size=32, solving=Tr
 
 def make_mono_dataset_sequential(path, size=(32, 32), tasks=[], batch_size=32, solving=True, n_per_task=1, shuffle=True,
                                  proposal_dict=None, dijkstra=False, save=True):
-    data = collect_solving_dataset_sequential_paths(path, tasks, n_per_task=n_per_task, stride=5, size=size,
+    data = collect_sequential_path_features_dataset(path, tasks, n_per_task=n_per_task, stride=8, size=size,
                                                     solving=solving,
                                                     proposal_dict=proposal_dict, dijkstra=dijkstra, save=save)
 
